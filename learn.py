@@ -37,7 +37,8 @@ class Network():
             dinputs = self.dactivations[L] * dsigmoid(self.inputs[L])
             dparams = np.outer(dinputs, self.activations[L-1])
             self.dparams[L] -= dparams
-            self.dactivations[L-1] = dinputs.dot(self.params[L])[:-1]
+            # self.dactivations[L-1] = dinputs.dot(self.params[L])[:-1]
+            self.dactivations[L-1] = self.params[L].transpose().dot(dinputs)[:-1]
     
     def update(self):
         for param, grad in zip(self.params[1:], self.dparams[1:]):
@@ -97,20 +98,6 @@ def dsigmoid(x):
     o = sigmoid(x)
     return o*(1-o)
 
-def relu(x):
-    """relu"""
-    return x * (x > 0)
-
-def drelu(x, fake = 0.0):
-    """derivative of relu with optional fake derivative in zero region"""
-    return 1.0 * (x > 0) + fake * x * (x <= 0)
-
-def relog(x):
-    return np.log(relu(x) + 1.0)
-
-def drelog(x):
-    return 1/(relu(x) + 1.0)
-
 def main():
     train_set = MNIST('data', train=True, download=True, transform=np.array)
     test_set = MNIST('data', train=False, transform=np.array)
@@ -135,19 +122,19 @@ def main():
         avg_correct = 0
         for batch in train_loader:
             loss, correct = net.forward(batch, grad=True)
-            if not i%20:
-                print(f"{i} loss {loss:.3f} correct {correct:.2f} lr {net.lr:.2f}")
+            if not i%50:
+                print(f"batch {i}/{len(train_loader)} loss {loss:.3f} correct {correct*100:.1f}% lr {net.lr:.2f}")
             avg_loss += loss
             avg_correct += correct
             i += 1
-            net.lr = min(net.lr, loss/5, 0.1)*1.01
-        print(f"EPOCH {epoch} loss {avg_loss/i:.3f} correct {avg_correct/i:.2f}")
+            # net.lr = min(net.lr, loss/5, 0.1)*1.01
+        print(f"EPOCH {epoch} loss {avg_loss/i:.3f} correct {avg_correct/i*100:.1f}%")
     
     avg_correct = 0
     for batch in test_loader:
         loss, correct = net.forward(batch, grad=False)
         avg_correct += correct
-    print(f"TEST loss correct {avg_correct/len(test_loader):.2f}")
+    print(f"TEST correct {avg_correct/len(test_loader)*100:.1f}%")
 
     
 if __name__ == "__main__":
