@@ -2,14 +2,20 @@
 import matplotlib.pyplot as plt
 import math
 import numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
+import pickle
+import gzip
 
 # using torch for utility
 from torch.utils.data import DataLoader
-from torchvision.datasets import MNIST
 
 def downfrom(x, stop=-1, step=-1):
     return range(x, stop, step)
+
+def onehot(v, size):
+    vec = np.zeros(10)
+    vec[v] = 1.0
+    return vec
 
 class Network():
     def __init__(self, shape, lr=1e-1):
@@ -17,8 +23,6 @@ class Network():
         self.params = Network.new_params(shape)
         self.inputs = Network.new_activations(shape, bias=False)
         self.activations = Network.new_activations(shape)
-        
-        print(" ".join([str(x.shape) for x in self.activations]))            
 
         self.dparams = Network.new_params(shape)
         self.dactivations = Network.new_activations(shape, bias=False)
@@ -40,7 +44,7 @@ class Network():
     def backprop(self, target):
         self.dactivations[-1] = dloss(self.activations[-1][:-1], target)
         for L in downfrom(len(self.params)-1, 0):
-            # gradient of inputs of layer
+            # gradient of inputs to layer
             dinputs = self.dactivations[L] * dsigmoid(self.inputs[L])
             # gradient of parameters of layer
             dparams = np.outer(dinputs, self.activations[L-1])
@@ -63,8 +67,7 @@ class Network():
         avg_loss = 0
         avg_correct = 0
         for batchn, (x, y) in enumerate(zip(images, labels)):
-            target = np.zeros(10)
-            target[y] = 1.0
+            target = onehot(y, 10)
             output = self.forward_sample(x)
             correct = (np.argmax(output) == y)
             avg_correct += correct
@@ -110,33 +113,38 @@ def dsigmoid(x):
     return o*(1-o)
 
 def main():
-    train_set = MNIST('data', train=True, download=True, transform=np.array)
-    test_set = MNIST('data', train=False, transform=np.array)
-    train_loader = DataLoader(train_set, batch_size=32, shuffle=True)
-    test_loader = DataLoader(test_set, batch_size=32, shuffle=True)
+    with gzip.open("data/mnist.pickle.gz", "rb") as f:
+        train_set, test_set = pickle.load(f)
+    train_data, train_labels = train_set
+    test_data, test_labels = test_set
+    batch_size = 64
 
     network_shape = [28*28, 16, 16, 10]
     net = Network(network_shape)
     epochs = 3
     for epoch in range(epochs):
-        i = 0
+        batches = [
+            (train_data[i:i+batch_size], train_labels[i:i+batch_size])
+            for i in range(0, len(train_data), batch_size)
+        ]
         avg_loss = 0
         avg_correct = 0
-        for batch in train_loader:
+        for batch in tqdm(batches):
             loss, correct = net.forward(batch, grad=True)
-            if not i%50:
-                print(f"batch {i}/{len(train_loader)} loss {loss:.3f} correct {correct*100:.1f}% lr {net.lr:.2f}")
             avg_loss += loss
             avg_correct += correct
-            i += 1
+        print(f"EPOCH {epoch} loss {avg_loss/len(batches):.3f} correct {avg_correct/len(batches)*100:.1f}% lr {net.lr}")
         net.lr *= 0.1
-        print(f"EPOCH {epoch} loss {avg_loss/i:.3f} correct {avg_correct/i*100:.1f}%")
     
     avg_correct = 0
-    for batch in test_loader:
+    test_batches = [
+        (test_data[i:i+batch_size], test_labels[i:i+batch_size])
+        for i in range(0, len(test_data), batch_size)
+    ]
+    for batch in test_batches:
         loss, correct = net.forward(batch, grad=False)
         avg_correct += correct
-    print(f"TEST correct {avg_correct/len(test_loader)*100:.1f}%")
+    print(f"TEST correct {avg_correct/len(test_batches)*100:.1f}%")
 
     
 if __name__ == "__main__":
